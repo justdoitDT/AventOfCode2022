@@ -12,6 +12,8 @@ for index in range(len(lines)):
 sensorsDict = {}
 for line in lines:
     sensorsDict[(int(line[0]), int(line[1]))] = (int(line[2]), int(line[3]))
+# for sensor in sensorsDict:
+#     print(sensor, sensorsDict[sensor])
 
 # define helper function, returns manhattan distance between two input coordinates
 def measureDist(coord1, coord2):
@@ -19,9 +21,10 @@ def measureDist(coord1, coord2):
 
 
 
-'''
-# Part One
 
+
+# Part One
+'''
 def mergeRanges(existingRanges, newRange):
     # no existing ranges
     if not existingRanges:
@@ -90,50 +93,154 @@ print(output)
 
 
 
+
+
+
+
+
+
 # Part Two
 
-# find the edges of each sensor's radius
+# Strategy:
+# each sensor is surrounded by a diamond-shaped exclusion zone
+# the distress beacon must lie at the intersection of the 1-pixel-wide gap between
+    # the top-right edge of one exclusion zone, and the bottom-left edge of another exclusion zone
+    # and
+    # the top-left edge of one exclusion zone, and the bottom-right edge of another exclusion zone
 
-# check each edge coordinate (x, y), looking for one that has other edge
-# coordinates at (x - 1, y + 1), (x + 1, y + 1), and (x, y + 2)
-# the coordinate below this edge coordinate is likely to be the one available coordinate
 
-edges = []
-intersections = set([])
-sensorCount = 0
-for (x, y) in sensorsDict:
-    edges.append(set([]))
-    print('sensor ' + str(sensorCount) + '/' + str(len(sensorsDict)), (x, y))
-    # calculate radius
-    radius = measureDist((x, y), sensorsDict[(x, y)])
-    for y_increment in range(radius + 1):
-        x_increment = radius - y_increment
-        newEdges = [(x + x_increment, y + y_increment), (x + x_increment, y - y_increment), (x - x_increment, y + y_increment), (x - x_increment, y - y_increment)]
-        for newEdge in newEdges:
-            for index, edgesSet in enumerate(edges):
-                if newEdge in edgesSet:
-                    intersections.add((newEdge, index, sensorCount))
-                edges[-1].add(newEdge)
-    sensorCount += 1
 
-print('lenEdges', len(edges))
-print('lenIntersections', len(intersections))
-print(intersections)
+# define LineSegment class
+# inputs are coordinates of 2 endpoints
+# (note: top-left and bottom-right diamond segments are defined to have negative slope)     y = mx + b
+class LineSegment(object):
+    def __init__(self, endpoint1, endpoint2):   # (x1, y1), (x2, y2)
+        self.endpoint1 = endpoint1
+        self.endpoint2 = endpoint2
+        self.slope = (endpoint2[1] - endpoint1[1]) / (endpoint2[0] - endpoint1[0])
+        self.y_int = endpoint1[1] - self.getSlope() * endpoint1[0]
+        self.x_min = min(endpoint1[0], endpoint2[0])
+        self.x_max = max(endpoint1[0], endpoint2[0])
+        self.domain = [self.getXmin(), self.getXmax]    # [x_min, x_max]
+    def getEndpoints(self):
+        endpoints = [self.endpoint1, self.endpoint2]
+        endpoints.sort()
+        return endpoints
+    def getSlope(self):
+        return self.slope
+    def getYint(self):
+        return self.y_int
+    def getXmin(self):
+        return self.x_min
+    def getXmax(self):
+        return self.x_max
+    def getDomain(self):
+        return self.domain
+    def __str__(self):
+        return 'slope: '+ str(self.getSlope()) + '  y-int: ' + str(self.getYint()) + '\nendpoints: ' + str(self.getEndpoints()[0]) + ', ' + str(self.getEndpoints()[1])
 
-'''
-candidates = set([])
-numIntersections = len(intersections)
-edgeCount = 0
-print(numIntersections)
 
-for (x, y) in intersections:
-    if len(candidates) > 5:
+
+# define sensor class
+# calculates and stores the 4 edges of sensor's exclusion zone as LineSegment objects
+class Sensor(object):
+    def __init__(self, identifier, sensorCoord, closestBeacon):
+        self.ID = 'Sensor # ' + str(identifier)
+        self.coord = sensorCoord
+        self.x = sensorCoord[0]
+        self.y = sensorCoord[1]
+        self.beacon = closestBeacon
+        self.radius = measureDist(sensorCoord, closestBeacon)
+        self.topRightEdge = LineSegment((self.x + self.radius, self.y), (self.x, self.y - self.radius))
+        self.topLeftEdge = LineSegment((self.x, self.y - self.radius), (self.x - self.radius, self.y))
+        self.bottomLeftEdge = LineSegment((self.x - self.radius, self.y), (self.x, self.y + self.radius))
+        self.bottomRightEdge = LineSegment((self.x, self.y + self.radius), (self.x + self.radius, self.y))
+    def getID(self):
+        return self.ID
+    def getCoord(self):
+        return self.coord
+    def getBeacon(self):
+        return self.beacon
+    def getRadius(self):
+        return self.radius
+    def getTopRightEdge(self):
+        return self.topRightEdge
+    def getTopLeftEdge(self):
+        return self.topLeftEdge
+    def getBottomLeftEdge(self):
+        return self.bottomLeftEdge
+    def getBottomRightEdge(self):
+        return self.bottomRightEdge
+    def __str__(self):
+        return self.ID + ' ' + str(self.getCoord()) + ' Radius: ' + str(self.getRadius())
+
+
+
+# create list of all sensors
+sensorsList = []
+count = 0
+for sensor in sensorsDict:
+    sensorsList.append(Sensor(count, sensor, sensorsDict[sensor]))
+    count += 1
+
+
+
+# find the 1-pixel-wide gap between the top-right edge of one exclusion zone, and the bottom-left edge of another exclusion zone
+segmentAboveGap = None
+for sensor1 in sensorsList:
+    for sensor2 in sensorsList:
+        # if y-intercepts of edges differ by 2
+        if abs(sensor1.getBottomLeftEdge().getYint() - sensor2.getTopRightEdge().getYint()) == 2:
+            # if there is overlap between the ranges
+            if not (sensor1.getBottomLeftEdge().getXmax() < sensor2.getTopRightEdge().getXmin() or sensor1.getBottomLeftEdge().getXmin() > sensor2.getTopRightEdge().getXmax()):
+                segmentAboveGap = sensor1.getBottomLeftEdge()
+                break
+    if segmentAboveGap:
         break
-    edgeCount += 1
-    if edgeCount % 100 == 0:
-        print('Progress: ' + str(edgeCount/numIntersections*100) + '%')
-    if (x - 1, y + 1) in edges and (x + 1, y + 1) in edges and (x, y + 2) in edges and (x, y + 1) not in edges:
-        candidates.add((x, y + 1))
 
-print(candidates)
-'''
+# create posGapSegment representing the 1-pixel-wide gap between the top-right and bottom-left edges of two exclusion zones
+# get endpoints of segmentAboveGap
+[(ep1x, ep1y), (ep2x, ep2y)] = segmentAboveGap.getEndpoints()
+# endpoints of gap segment are 1 pixel below endpoints of segmentAboveGap
+posGapSegment = LineSegment((ep1x, ep1y + 1), (ep2x, ep2y + 1))
+
+
+
+# find the 1-pixel-wide gap between the top-left edge of one exclusion zone, and the bottom-right edge of another exclusion zone
+segmentAboveGap = None
+for sensor1 in sensorsList:
+    for sensor2 in sensorsList:
+        # if y-intercepts of edges differ by 2
+        if abs(sensor1.getTopLeftEdge().getYint() - sensor2.getBottomRightEdge().getYint()) == 2:
+            # if there is overlap between the ranges
+            if not (sensor1.getTopLeftEdge().getXmax() < sensor2.getBottomRightEdge().getXmin() or sensor1.getTopLeftEdge().getXmin() > sensor2.getBottomRightEdge().getXmax()):
+                segmentAboveGap = sensor2.getBottomRightEdge()
+                break
+            if segmentAboveGap:
+                break
+
+# create negGapSegment representing the 1-pixel-wide gap between the top-left and bottom-right edges of two exclusion zones
+# get endpoints of segmentAboveGap
+[(ep1x, ep1y), (ep2x, ep2y)] = segmentAboveGap.getEndpoints()
+# endpoints of gap segment are 1 pixel below endpoints of segmentAboveGap
+negGapSegment = LineSegment((ep1x, ep1y + 1), (ep2x, ep2y + 1))
+
+
+
+# distress beacon lies at the intersection of posGapSegment and negGapSegment
+# Algebra to solve for (x, y) coordinates of intersection point
+#
+#     y = m1 * x + b1 = m2x + b2
+#         m1 * x + b1 = m2x + b2
+#       x * (m1 - m2) = b2 - b1
+#                   x = (b2 - b1) / (m1 - m2)
+#                   y = m1 * x + b1
+
+xDistress = (negGapSegment.getYint() - posGapSegment.getYint()) / (posGapSegment.getSlope() - negGapSegment.getSlope())
+yDistress = posGapSegment.getSlope() * xDistress + posGapSegment.getYint()
+
+
+
+# calculate tuning frequency
+tuningFrequency = 4000000 * xDistress + yDistress
+print(tuningFrequency)
